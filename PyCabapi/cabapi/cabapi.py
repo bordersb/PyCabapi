@@ -8,10 +8,13 @@ else:
     import urllib.parse as urllib
 
 log = logging.getLogger(__name__)
+
+
 class FullContact(object):
     def __init__(self, client_id, client_secret, username, password):
         self.base_url = 'http://cabapi.elb.fullcontact.com/'
         self.oauth_token_url = 'http://oauth.elb.fullcontact.com/v3/oauth.makeAccessToken/'
+        self.oauth_refresh_token_url = 'http://oauth.elb.fullcontact.com/v3/oauth.refreshToken'
         self.post_endpoints = {
             'abs_get': 'v3/abs.get',
             'account_get': 'v3/account.get',
@@ -34,14 +37,14 @@ class FullContact(object):
         self.username = username
         self.password = password
         self.scope = "account.read,contacts.write,contacts.read,tags.read,tags.write"
+        self.access_token_info = self.credentials_get()
+        self.access_token = self.access_token_info['access_token']
+        self.refresh_token = self.access_token_info['refresh_token']
 
-        self.access_token = self.credentials_get()['access_token']
         for endpoint in self.post_endpoints:
             method = lambda endpoint=endpoint, **kwargs: self.api_post(endpoint, **kwargs)
             setattr(self, endpoint, method)
             # print method(endpoint).content
-            print method()
-            print endpoint
 
     def credentials_get(self):
         payload = {
@@ -49,11 +52,25 @@ class FullContact(object):
             'client_secret': self.client_secret,
             'username': self.username,
             'password': self.password,
-            'scope': self.scope
+            'scope': self.scope,
         }
 
         r = requests.post(self.oauth_token_url, data=payload)
         return r.json()
+
+    def credentials_refresh(self):
+        payload = {
+            'client_id': self.client_id,
+            'client_secret': self.client_secret,
+            'refresh_token': self.refresh_token
+        }
+
+        r = requests.post(self.oauth_refresh_token_url, data=payload)
+        if r.status_code == 200:
+            self.access_token_info = r.json()
+        else:
+            self.access_token_info = requests.post(self.oauth_token_url, data=payload).json
+        self.access_token = self.access_token_info['access_token']
 
     def api_post(self, endpoint, **kwargs):
         """ Makes a FullContact API call
@@ -75,10 +92,12 @@ class FullContact(object):
         """
         endpoint = self.base_url + self.post_endpoints[endpoint]
         headers = {"Authorization": "Bearer %s" %self.access_token}
-        print kwargs
-        if kwargs is not None:
-            return requests.post(endpoint, data=json.dumps(kwargs.get('data')), headers=headers)
-        return requests.post(endpoint, data=kwargs, headers=headers)
-
-
-
+        if kwargs:
+            r = requests.post(endpoint, data=json.dumps(kwargs.get('data')), headers=headers)
+        else:
+            r = requests.post(endpoint, data=kwargs, headers=headers)
+        if r.status_code == 401 or r.status_code == 403:
+            self.credentials_refresh()
+            print "Credentials needed refreshed.  Please Try Again"
+        else:
+            return r
