@@ -1,5 +1,6 @@
-# FullContact Pytohn Client for CabAPI
+# FullContact Python CabAPI Client
 
+Contact creation, updation, deletion, etc. for FullContact address books.
 
 
 ## Installation
